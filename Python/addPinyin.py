@@ -1,130 +1,169 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
-from pypinyin import pinyin, Style
+import sys
+import pyttsx3
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout, QWidget, QTextEdit, QPushButton, \
+    QLabel, QLineEdit, QGraphicsView, QGraphicsScene, QGraphicsTextItem
+from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt
 from googletrans import Translator
+from pypinyin import pinyin, Style
 
 
-class Ui_MainWindow(object):
-    def setupUi(self, MainWindow):
-        MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(800, 600)
-        self.centralwidget = QtWidgets.QWidget(MainWindow)
-        self.centralwidget.setObjectName("centralwidget")
-        self.verticalLayout_7 = QtWidgets.QVBoxLayout(self.centralwidget)
-        self.verticalLayout_7.setObjectName("verticalLayout_7")
-        self.verticalLayout_4 = QtWidgets.QVBoxLayout()
-        self.verticalLayout_4.setObjectName("verticalLayout_4")
-        self.Label_input = QtWidgets.QLabel(self.centralwidget)
-        self.Label_input.setObjectName("Label_input")
-        self.verticalLayout_4.addWidget(self.Label_input)
+class PinyinTranslatorApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("中文句子处理工具")
+        self.setGeometry(100, 100, 800, 600)
 
-        # 修改为 QTextEdit 使其可编辑
-        self.textEdit_input = QtWidgets.QTextEdit(self.centralwidget)
-        self.textEdit_input.setObjectName("textEdit_input")
-        self.verticalLayout_4.addWidget(self.textEdit_input)
-        self.verticalLayout_7.addLayout(self.verticalLayout_4)
+        self.initUI()
 
-        self.Button_trans = QtWidgets.QPushButton(self.centralwidget)
-        self.Button_trans.setObjectName("Button_trans")
-        self.verticalLayout_7.addWidget(self.Button_trans)
+        # 初始化语音引擎
+        self.speaker = pyttsx3.init()
 
-        self.verticalLayout_5 = QtWidgets.QVBoxLayout()
-        self.verticalLayout_5.setObjectName("verticalLayout_5")
-        self.Label_pinyin = QtWidgets.QLabel(self.centralwidget)
-        self.Label_pinyin.setObjectName("Label_pinyin")
-        self.verticalLayout_5.addWidget(self.Label_pinyin)
-        self.textBrowser_pinyin = QtWidgets.QTextBrowser(self.centralwidget)
-        self.textBrowser_pinyin.setObjectName("textBrowser_pinyin")
-        self.verticalLayout_5.addWidget(self.textBrowser_pinyin)
-        self.verticalLayout_7.addLayout(self.verticalLayout_5)
+    def initUI(self):
+        # 主窗口布局
+        self.layout = QVBoxLayout()
 
-        self.verticalLayout_6 = QtWidgets.QVBoxLayout()
-        self.verticalLayout_6.setObjectName("verticalLayout_6")
-        self.Label_note = QtWidgets.QLabel(self.centralwidget)
-        self.Label_note.setObjectName("Label_note")
-        self.verticalLayout_6.addWidget(self.Label_note)
-        self.textBrowser_note = QtWidgets.QTextBrowser(self.centralwidget)
-        self.textBrowser_note.setObjectName("textBrowser_note")
-        self.verticalLayout_6.addWidget(self.textBrowser_note)
-        self.verticalLayout_7.addLayout(self.verticalLayout_6)
+        # 文本编辑框显示文件内容
+        self.text_edit = QTextEdit(self)
+        self.text_edit.setPlaceholderText("选择文本文件后显示内容...")
+        self.layout.addWidget(self.text_edit)
 
-        MainWindow.setCentralWidget(self.centralwidget)
-        self.menubar = QtWidgets.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 800, 22))
-        self.menubar.setObjectName("menubar")
-        MainWindow.setMenuBar(self.menubar)
-        self.statusbar = QtWidgets.QStatusBar(MainWindow)
-        self.statusbar.setObjectName("statusbar")
-        MainWindow.setStatusBar(self.statusbar)
+        # 按钮：选择文件
+        self.file_button = QPushButton('选择文本文件', self)
+        self.file_button.clicked.connect(self.load_file)
+        self.layout.addWidget(self.file_button)
 
-        self.retranslateUi(MainWindow)
-        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+        # 按钮：处理文本
+        self.process_button = QPushButton('Process', self)
+        self.process_button.clicked.connect(self.process_text)
+        self.layout.addWidget(self.process_button)
 
-        # 连接翻译按钮的点击事件
-        self.Button_trans.clicked.connect(self.add_pinyin_and_translate)
+        # 按钮：为选中文本加拼音
+        self.pinyin_button = QPushButton('为选中文本加拼音', self)
+        self.pinyin_button.clicked.connect(self.add_pinyin_for_selection)
+        self.layout.addWidget(self.pinyin_button)
 
-    def retranslateUi(self, MainWindow):
-        _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
-        self.Label_input.setText(_translate("MainWindow", "输入中文句子"))
-        self.Button_trans.setText(_translate("MainWindow", "翻译"))
-        self.Label_pinyin.setText(_translate("MainWindow", "加拼音并翻译"))
-        self.Label_note.setText(_translate("MainWindow", "注解"))
+        # 按钮：朗读文本
+        self.speak_button = QPushButton('朗读文本', self)
+        self.speak_button.clicked.connect(self.speak_text)
+        self.layout.addWidget(self.speak_button)
 
-    def add_pinyin_and_translate(self):
-        sentence = self.textEdit_input.toPlainText().strip()
-        if not sentence:
+        # 显示翻译结果
+        self.translated_label = QLabel("翻译结果：", self)
+        self.layout.addWidget(self.translated_label)
+
+        # 拼音显示区域
+        self.graphics_view = QGraphicsView(self)
+        self.scene = QGraphicsScene(self)
+        self.graphics_view.setScene(self.scene)
+        self.layout.addWidget(self.graphics_view)
+
+        # 设置主窗口布局
+        container = QWidget()
+        container.setLayout(self.layout)
+        self.setCentralWidget(container)
+
+    def load_file(self):
+        """加载文件并显示到输入框"""
+        file_path, _ = QFileDialog.getOpenFileName(self, '选择文本文件', '', 'Text Files (*.txt)')
+        if not file_path:
             return
 
-        # 获取带声调的拼音
-        pinyin_sentence = " ".join([word[0] for word in pinyin(sentence, style=Style.TONE)])
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
 
-        # 获取不带声调的拼音
-        pinyin_no_tone = " ".join([word[0] for word in pinyin(sentence, style=Style.NORMAL)])
+        self.text_edit.setText(content)
 
-        # 获取拼音与汉字对应
-        pinyin_with_hanzi = ""
-        for word, pinyin_word in zip(sentence, pinyin(sentence, style=Style.TONE)):
-            pinyin_with_hanzi += f"{word}\n{pinyin_word[0]}\n"
+    def process_text(self):
+        """处理文本：翻译和加拼音"""
+        content = self.text_edit.toPlainText().strip()
+        if not content:
+            return
 
-        # 获取翻译
+        # 1. 翻译
+        translated_text = self.translate_sentence(content)
+        self.translated_label.setText(f"翻译结果：{translated_text}")
+
+        # 2. 加拼音
+        self.scene.clear()  # 清空之前的拼音内容
+        self.render_pinyin(content)
+
+    def render_pinyin(self, sentence):
+        """在 GraphicsView 中渲染拼音和文字"""
+        # 设置拼音字体
+        pinyin_font = QFont("Arial", 12, QFont.Bold)
+        # 设置汉字字体
+        chinese_font = QFont("Arial", 14, QFont.Normal)
+
+        x, y = 10, 20
+        for char in sentence:
+            if '\u4e00' <= char <= '\u9fff':  # 如果是汉字
+                py = pinyin(char, style=Style.TONE, heteronym=False)
+                py_text = py[0][0] if py else ""
+                pinyin_item = QGraphicsTextItem(py_text)
+                pinyin_item.setFont(pinyin_font)
+                pinyin_item.setPos(x, y)  # 拼音位置
+                self.scene.addItem(pinyin_item)
+
+                chinese_item = QGraphicsTextItem(char)
+                chinese_item.setFont(chinese_font)
+                chinese_item.setPos(x, y + 20)  # 汉字位置
+                self.scene.addItem(chinese_item)
+
+                x += 50  # 字间距
+            else:
+                chinese_item = QGraphicsTextItem(char)
+                chinese_item.setFont(chinese_font)
+                chinese_item.setPos(x, y + 20)  # 非汉字直接显示
+                self.scene.addItem(chinese_item)
+                x += 20  # 英文或标点的间距
+
+    def add_pinyin_for_selection(self):
+        """为选中的文本添加拼音"""
+        selected_text = self.text_edit.textCursor().selectedText()
+        if not selected_text:
+            return
+
+        # 获取拼音
+        pinyin_text = self.get_pinyin_for_text(selected_text)
+        self.text_edit.insertPlainText(f"  [{pinyin_text}]")  # 将拼音插入到选中文本后
+
+    def get_pinyin_for_text(self, text):
+        """为文本获取拼音"""
+        py_list = pinyin(text, style=Style.TONE, heteronym=False)
+        py_text = ' '.join([p[0] for p in py_list])
+        return py_text
+
+    def translate_sentence(self, sentence):
+        """翻译整句话为英文"""
         translator = Translator()
-        translation = translator.translate(sentence, src="zh-cn", dest="en").text
+        try:
+            translated = translator.translate(sentence, src='zh-cn', dest='en')
+            return translated.text
+        except Exception as e:
+            return f"翻译失败: {e}"
 
-        # 设置拼音和翻译
-        self.textBrowser_pinyin.setText(f"{pinyin_sentence}\n{translation}")
-        self.textBrowser_note.setText(f"{pinyin_no_tone} ({pinyin_sentence})\n{pinyin_with_hanzi}")
+    def speak_text(self):
+        """朗读输入框中的文本"""
+        text = self.text_edit.toPlainText().strip()
+        if not text:
+            return
 
-        # 在汉字上方显示拼音
-        self.show_pinyin_above_hanzi(sentence)
+        # 设置语音引擎的属性（如语速和音量）
+        self.speaker.setProperty('rate', 150)  # 设置语速
+        self.speaker.setProperty('volume', 1)  # 设置音量（0.0 to 1.0）
 
-    def show_pinyin_above_hanzi(self, sentence):
-        """
-        用 QPainter 绘制拼音在汉字上方
-        """
-        # 创建一个 QPainter 来绘制拼音和汉字
-        painter = QtGui.QPainter(self.textEdit_input.viewport())
-        painter.setFont(QtGui.QFont("Arial", 12))
-
-        pinyin_list = pinyin(sentence, style=Style.TONE)
-        x, y = 10, 10  # 起始位置
-
-        for char, pinyin_word in zip(sentence, pinyin_list):
-            # 绘制拼音
-            painter.drawText(x, y, pinyin_word[0])  # 拼音在汉字上方
-            # 绘制汉字
-            painter.drawText(x, y + 20, char)  # 汉字在拼音下方
-            x += 30  # 每个字符间隔
-
-        painter.end()
+        # 朗读文本
+        self.speaker.say(text)
+        self.speaker.runAndWait()
 
 
-# 程序入口，启动 PyQt 应用
-if __name__ == "__main__":
-    import sys
+def main():
+    app = QApplication(sys.argv)
+    window = PinyinTranslatorApp()
+    window.show()
+    sys.exit(app.exec_())
 
-    app = QtWidgets.QApplication(sys.argv)  # 初始化 QApplication
-    MainWindow = QtWidgets.QMainWindow()  # 创建主窗口
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)  # 设置界面
-    MainWindow.show()  # 显示窗口
-    sys.exit(app.exec_())  # 启动事件循环
+
+if __name__ == '__main__':
+    main()
